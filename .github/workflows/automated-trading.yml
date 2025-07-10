@@ -1,0 +1,325 @@
+name: 🤖 Automated Trading & Monitoring
+
+on:
+  schedule:
+    # Ejecutar cada 15 minutos durante horas de mercado
+    - cron: '*/15 6-22 * * 1-5'  # Lunes a Viernes, 6 AM - 10 PM UTC
+  
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: 'Trading Strategy'
+        required: true
+        default: 'momentum'
+        type: choice
+        options:
+        - momentum
+        - mean_reversion
+        - arbitrage
+        - all
+      
+      dry_run:
+        description: 'Dry Run Mode'
+        required: true
+        default: true
+        type: boolean
+      
+      max_position_size:
+        description: 'Max Position Size (USD)'
+        required: true
+        default: '1000'
+
+env:
+  TRADING_ENV: 'production'
+  MAX_DAILY_LOSS: '500'
+  RISK_LEVEL: 'medium'
+
+jobs:
+  # ===============================
+  # 📊 MARKET ANALYSIS
+  # ===============================
+  market-analysis:
+    name: 📊 Market Analysis
+    runs-on: ubuntu-latest
+    outputs:
+      market_conditions: ${{ steps.analysis.outputs.conditions }}
+      volatility_level: ${{ steps.analysis.outputs.volatility }}
+      recommendation: ${{ steps.analysis.outputs.recommendation }}
+
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements/requirements.txt
+
+    - name: 📊 Run Market Analysis
+      id: analysis
+      run: |
+        python scripts/market_analysis.py \
+          --output-format github \
+          --timeframe 1h \
+          --symbols BTC/USDT,ETH/USDT,BNB/USDT
+      env:
+        BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+        BINANCE_SECRET: ${{ secrets.BINANCE_SECRET }}
+        COINBASE_API_KEY: ${{ secrets.COINBASE_API_KEY }}
+        COINBASE_SECRET: ${{ secrets.COINBASE_SECRET }}
+        KRAKEN_API_KEY: ${{ secrets.KRAKEN_API_KEY }}
+        KRAKEN_SECRET: ${{ secrets.KRAKEN_SECRET }}
+
+    - name: 📋 Upload Analysis Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: market-analysis-${{ github.run_number }}
+        path: reports/market_analysis_*.json
+
+  # ===============================
+  # 🧠 AI AGENTS EXECUTION
+  # ===============================
+  ai-agents:
+    name: 🧠 AI Agents Analysis
+    runs-on: ubuntu-latest
+    needs: [market-analysis]
+    
+    strategy:
+      matrix:
+        agent: [technical, news, risk]
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements/requirements.txt
+
+    - name: 🧠 Run ${{ matrix.agent }} Agent
+      run: |
+        python -m src.ai_agents.${{ matrix.agent }}_agent \
+          --market-conditions "${{ needs.market-analysis.outputs.market_conditions }}" \
+          --output reports/${{ matrix.agent }}_analysis.json
+      env:
+        NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    - name: 📋 Upload Agent Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.agent }}-agent-${{ github.run_number }}
+        path: reports/${{ matrix.agent }}_analysis.json
+
+  # ===============================
+  # 📈 STRATEGY EXECUTION
+  # ===============================
+  execute-strategies:
+    name: 📈 Execute Trading Strategies
+    runs-on: ubuntu-latest
+    needs: [market-analysis, ai-agents]
+    if: needs.market-analysis.outputs.recommendation == 'TRADE'
+
+    strategy:
+      matrix:
+        strategy: ${{ fromJson(github.event.inputs.strategy == 'all' && '["momentum", "mean_reversion", "arbitrage"]' || format('["{0}"]', github.event.inputs.strategy || 'momentum')) }}
+
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements/requirements.txt
+
+    - name: 📊 Download Analysis Reports
+      uses: actions/download-artifact@v3
+      with:
+        path: reports/
+
+    - name: 🎯 Execute ${{ matrix.strategy }} Strategy
+      run: |
+        python -m src.strategies.${{ matrix.strategy }}_strategy \
+          --dry-run ${{ github.event.inputs.dry_run || 'true' }} \
+          --max-position-size ${{ github.event.inputs.max_position_size || '1000' }} \
+          --market-data reports/market-analysis-${{ github.run_number }}/market_analysis_*.json \
+          --ai-analysis reports/ \
+          --output reports/${{ matrix.strategy }}_execution.json
+      env:
+        BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+        BINANCE_SECRET: ${{ secrets.BINANCE_SECRET }}
+        COINBASE_API_KEY: ${{ secrets.COINBASE_API_KEY }}
+        COINBASE_SECRET: ${{ secrets.COINBASE_SECRET }}
+        KRAKEN_API_KEY: ${{ secrets.KRAKEN_API_KEY }}
+        KRAKEN_SECRET: ${{ secrets.KRAKEN_SECRET }}
+        MAX_DAILY_LOSS: ${{ env.MAX_DAILY_LOSS }}
+        RISK_LEVEL: ${{ env.RISK_LEVEL }}
+
+    - name: 📋 Upload Execution Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.strategy }}-execution-${{ github.run_number }}
+        path: reports/${{ matrix.strategy }}_execution.json
+
+  # ===============================
+  # 🛡️ RISK MONITORING
+  # ===============================
+  risk-monitoring:
+    name: 🛡️ Risk Monitoring
+    runs-on: ubuntu-latest
+    needs: [execute-strategies]
+    if: always()
+
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements/requirements.txt
+
+    - name: 📊 Download Execution Reports
+      uses: actions/download-artifact@v3
+      with:
+        path: reports/
+
+    - name: 🛡️ Run Risk Analysis
+      id: risk
+      run: |
+        python scripts/risk_monitor.py \
+          --execution-reports reports/ \
+          --max-daily-loss ${{ env.MAX_DAILY_LOSS }} \
+          --output reports/risk_analysis.json
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    - name: 🚨 Emergency Stop
+      if: steps.risk.outputs.emergency_stop == 'true'
+      run: |
+        echo "🚨 EMERGENCY STOP TRIGGERED!"
+        python scripts/emergency_stop.py --reason "Risk limits exceeded"
+      env:
+        BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+        BINANCE_SECRET: ${{ secrets.BINANCE_SECRET }}
+        COINBASE_API_KEY: ${{ secrets.COINBASE_API_KEY }}
+        COINBASE_SECRET: ${{ secrets.COINBASE_SECRET }}
+        KRAKEN_API_KEY: ${{ secrets.KRAKEN_API_KEY }}
+        KRAKEN_SECRET: ${{ secrets.KRAKEN_SECRET }}
+
+    - name: 📋 Upload Risk Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: risk-analysis-${{ github.run_number }}
+        path: reports/risk_analysis.json
+
+  # ===============================
+  # 📱 NOTIFICATIONS
+  # ===============================
+  send-notifications:
+    name: 📱 Send Notifications
+    runs-on: ubuntu-latest
+    needs: [risk-monitoring]
+    if: always()
+
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 📊 Download All Reports
+      uses: actions/download-artifact@v3
+      with:
+        path: reports/
+
+    - name: 📱 Send Trading Summary
+      run: |
+        python scripts/send_notifications.py \
+          --reports-dir reports/ \
+          --notification-type trading_summary
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        EMAIL_SMTP_HOST: ${{ secrets.EMAIL_SMTP_HOST }}
+        EMAIL_SMTP_PORT: ${{ secrets.EMAIL_SMTP_PORT }}
+        EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
+  # ===============================
+  # 📊 PERFORMANCE TRACKING
+  # ===============================
+  performance-tracking:
+    name: 📊 Performance Tracking
+    runs-on: ubuntu-latest
+    needs: [send-notifications]
+    if: always()
+
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements/requirements.txt
+
+    - name: 📊 Download All Reports
+      uses: actions/download-artifact@v3
+      with:
+        path: reports/
+
+    - name: 📈 Generate Performance Report
+      run: |
+        python scripts/performance_tracker.py \
+          --reports-dir reports/ \
+          --period daily \
+          --output reports/performance_daily.json
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        POSTGRES_CONNECTION: ${{ secrets.POSTGRES_CONNECTION }}
+
+    - name: 📊 Update Dashboard
+      run: |
+        python scripts/update_dashboard.py \
+          --performance-data reports/performance_daily.json
+      env:
+        DASHBOARD_API_KEY: ${{ secrets.DASHBOARD_API_KEY }}
+        DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+
+    - name: 📋 Archive Performance Data
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-${{ github.run_number }}
+        path: reports/performance_daily.json
+        retention-days: 90
