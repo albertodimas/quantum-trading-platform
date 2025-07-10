@@ -1,0 +1,45 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0.post1
+pydantic==2.5.2
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.13.0
+asyncpg==0.29.0
+redis==5.0.1
+
+# Trading
+ccxt==4.1.50
+python-binance==1.0.17
+alpaca-py==0.13.3
+yfinance==0.2.33
+
+# Data processing
+numpy==1.26.2
+pandas==2.1.4
+ta-lib==0.4.28
+
+# Async tasks
+celery==5.3.4
+celery[redis]==5.3.4
+flower==2.0.1
+
+# AI/ML
+langchain==0.0.350
+openai==1.5.0
+tiktoken==0.5.2
+
+# Utils
+httpx==0.25.2
+websockets==12.0
+python-json-logger==2.0.7
+structlog==23.2.0
+
+# Monitoring
+prometheus-client==0.19.0
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0

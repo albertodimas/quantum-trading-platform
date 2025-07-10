@@ -1,0 +1,116 @@
+{
+  "exchanges": {
+    "binance": {
+      "enabled": true,
+      "testnet": true,
+      "credentials": {
+        "api_key": "",
+        "api_secret": ""
+      },
+      "settings": {
+        "rate_limit": 1200,
+        "max_reconnect_attempts": 5,
+        "heartbeat_interval": 30,
+        "order_book_limit": 20
+      },
+      "trading_pairs": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "ADA/USDT",
+        "DOT/USDT",
+        "SOL/USDT",
+        "MATIC/USDT",
+        "AVAX/USDT"
+      ]
+    },
+    "kraken": {
+      "enabled": false,
+      "testnet": false,
+      "credentials": {
+        "api_key": "",
+        "api_secret": ""
+      },
+      "settings": {
+        "rate_limit": 60,
+        "max_reconnect_attempts": 3,
+        "heartbeat_interval": 60,
+        "order_book_limit": 20
+      },
+      "trading_pairs": [
+        "BTC/USD",
+        "ETH/USD",
+        "LTC/USD",
+        "XRP/USD",
+        "BTC/EUR",
+        "ETH/EUR"
+      ]
+    },
+    "coinbase": {
+      "enabled": false,
+      "testnet": true,
+      "credentials": {
+        "api_key": "",
+        "api_secret": "",
+        "passphrase": ""
+      },
+      "settings": {
+        "rate_limit": 100,
+        "max_reconnect_attempts": 3,
+        "heartbeat_interval": 30,
+        "order_book_limit": 20
+      },
+      "trading_pairs": [
+        "BTC/USD",
+        "ETH/USD",
+        "LTC/USD",
+        "BCH/USD",
+        "ETC/USD"
+      ]
+    }
+  },
+  "global_settings": {
+    "default_testnet": true,
+    "connection_timeout": 30,
+    "retry_attempts": 3,
+    "rate_limit_buffer": 0.8,
+    "websocket_ping_interval": 20,
+    "order_timeout": 300,
+    "balance_refresh_interval": 60
+  },
+  "arbitrage": {
+    "enabled": false,
+    "min_profit_percentage": 0.5,
+    "max_position_size_usd": 1000,
+    "blacklisted_pairs": [],
+    "monitoring_pairs": [
+      "BTC/USDT",
+      "ETH/USDT"
+    ],
+    "execution_delay_ms": 100,
+    "price_deviation_threshold": 0.1
+  },
+  "risk_management": {
+    "max_daily_trades": 100,
+    "max_position_per_exchange": 10000,
+    "stop_loss_percentage": 2.0,
+    "emergency_stop": false,
+    "allowed_order_types": [
+      "limit",
+      "market"
+    ],
+    "position_size_limits": {
+      "BTC": 0.1,
+      "ETH": 1.0,
+      "default": 100
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "health_check_interval": 30,
+    "log_level": "INFO",
+    "metrics_collection": true,
+    "alert_on_disconnect": true,
+    "performance_tracking": true
+  }
+}
