@@ -1,0 +1,37 @@
+# Testing Framework
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-benchmark==4.0.0
+pytest-timeout==2.2.0
+pytest-xdist==3.5.0  # Parallel test execution
+
+# Mocking and Fixtures
+faker==20.1.0
+factory-boy==3.3.0
+responses==0.24.1
+aioresponses==0.7.5
+freezegun==1.4.0  # Time mocking
+
+# Load Testing
+locust==2.17.0
+
+# Code Quality
+mypy==1.7.1
+flake8==6.1.0
+black==23.11.0
+isort==5.13.2
+bandit==1.7.5
+safety==3.0.1
+
+# Complexity Analysis
+radon==6.0.1
+
+# Test Reporting
+pytest-html==4.1.1
+allure-pytest==2.13.2
+
+# Performance Profiling
+memory-profiler==0.61.0
+py-spy==0.3.14

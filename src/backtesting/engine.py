@@ -27,7 +27,9 @@ from .portfolio_simulator import PortfolioSimulator
 from .execution_simulator import ExecutionSimulator
 from .performance_analyzer import PerformanceAnalyzer, PerformanceMetrics
 
-logger = get_logger(__name__)class BacktestMode(Enum):
+logger = get_logger(__name__)
+
+class BacktestMode(Enum):
     """Backtesting execution modes"""
     TICK_BY_TICK = "tick_by_tick"
     BAR_BY_BAR = "bar_by_bar"
@@ -221,7 +223,8 @@ class BacktestEngine:
             
         except Exception as e:
             self.logger.error(f"Backtest failed: {str(e)}")
-            raise        finally:
+            raise
+        finally:
             self.is_running = False
             
     async def _run_bar_simulation(self):

@@ -81,7 +81,8 @@ class SubscriptionManager:
                 sub for sub in self.subscriptions[symbol]
                 if sub.subscriber_id != subscriber_id
             ]
-            self.subscriber_index[subscriber_id].discard(symbol)        else:
+            self.subscriber_index[subscriber_id].discard(symbol)
+        else:
             # Remove all subscriptions for subscriber
             symbols = list(self.subscriber_index[subscriber_id])
             for sym in symbols:
@@ -122,7 +123,9 @@ class SubscriptionManager:
                 symbol: len(subs) 
                 for symbol, subs in self.subscriptions.items()
             }
-        }class DataDistributor:
+        }
+
+class DataDistributor:
     """
     Distributes market data to subscribers through various channels
     """

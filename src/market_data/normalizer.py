@@ -121,7 +121,8 @@ class DataNormalizer:
                         quantity=float(trade['qty']),
                         side='sell' if trade['isBuyerMaker'] else 'buy'
                     ))
-                return trades            else:
+                return trades
+            else:
                 return NormalizedTrade(
                     exchange='binance',
                     symbol=symbol,

@@ -185,7 +185,8 @@ class ExchangeDataCollector(DataCollector):
                         'method': 'SUBSCRIBE',
                         'params': [f"{symbol.lower()}@ticker"],
                         'id': len(subscriptions) + 1
-                    })                elif data_type == 'orderbook':
+                    })
+                elif data_type == 'orderbook':
                     subscriptions.append({
                         'method': 'SUBSCRIBE',
                         'params': [f"{symbol.lower()}@depth20@100ms"],
@@ -250,7 +251,8 @@ class ExchangeDataCollector(DataCollector):
                     'ticker',
                     stream_data,
                     datetime.now()
-                )            elif '@depth' in stream:
+                )
+            elif '@depth' in stream:
                 symbol = stream.split('@')[0].upper()
                 await self.callback(
                     self.exchange.name,
@@ -332,7 +334,9 @@ class ExchangeDataCollector(DataCollector):
                 self.logger.error(f"Reconnection attempt {attempt} failed: {str(e)}")
                 
         self.logger.error("Max reconnection attempts reached")
-        self.state = ConnectionState.ERRORclass WebSocketCollector(DataCollector):
+        self.state = ConnectionState.ERROR
+
+class WebSocketCollector(DataCollector):
     """
     Generic WebSocket data collector
     """
