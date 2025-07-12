@@ -1,5 +1,5 @@
 # Core Dependencies
-python>=3.11
+# Python 3.11+ required
 
 # Async Support
 aiohttp==3.9.1

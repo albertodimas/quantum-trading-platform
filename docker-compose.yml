@@ -35,6 +35,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: quantum_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Kafka (optional - for event streaming)
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -163,6 +181,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  rabbitmq_data:
   zookeeper_data:
   zookeeper_logs:
   kafka_data:
