@@ -8,20 +8,21 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 
-from src.core.config import settings
-from src.core.logging import get_logger
-from src.trading.models import (
+from ..core.config import settings
+from ..core.observability import get_logger
+from ..core.architecture import injectable, inject
+from ..exchange import ExchangeManager, OrderSide, OrderType, OrderStatus
+from .models import (
     ExecutionReport,
     Order,
-    OrderSide,
-    OrderStatus,
-    OrderType,
     Position,
     Signal,
 )
-from src.trading.order import OrderManager
-from src.trading.position import PositionManager
-from src.trading.risk import RiskManager
+from .order_manager import OrderManager
+from .position_manager import PositionManager
+from .risk_manager import RiskManager
+from .execution_algorithms import ExecutionEngine, ExecutionParameters, ExecutionAlgorithm
+from .order_lifecycle import OrderLifecycleManager
 
 logger = get_logger(__name__)
 
@@ -38,6 +39,7 @@ class TradingEngine:
         self,
         exchange_name: str,
         risk_manager: Optional[RiskManager] = None,
+        exchange_manager: Optional[ExchangeManager] = None,
     ) -> None:
         """
         Initialize trading engine.
@@ -45,11 +47,21 @@ class TradingEngine:
         Args:
             exchange_name: Name of the exchange to trade on
             risk_manager: Risk manager instance (creates default if None)
+            exchange_manager: Exchange manager instance (creates default if None)
         """
         self.exchange_name = exchange_name
         self.risk_manager = risk_manager or RiskManager()
         self.order_manager = OrderManager()
         self.position_manager = PositionManager()
+        self.exchange_manager = exchange_manager
+        
+        # Advanced execution components
+        self.execution_engine = ExecutionEngine(order_manager=self.order_manager)
+        self.lifecycle_manager = OrderLifecycleManager(
+            order_manager=self.order_manager,
+            position_manager=self.position_manager,
+            risk_manager=self.risk_manager
+        )
         
         # Engine state
         self._running = False
@@ -68,6 +80,7 @@ class TradingEngine:
             "Trading engine initialized",
             exchange=exchange_name,
             risk_limits=self.risk_manager.get_limits(),
+            has_exchange_manager=self.exchange_manager is not None
         )
     
     async def start(self) -> None:
@@ -86,6 +99,10 @@ class TradingEngine:
             asyncio.create_task(self._risk_monitor()),
         ]
         
+        # Start advanced execution components
+        await self.execution_engine.start()
+        await self.lifecycle_manager.start()
+        
         logger.info("Trading engine started successfully")
     
     async def stop(self) -> None:
@@ -102,6 +119,10 @@ class TradingEngine:
         
         # Wait for tasks to complete
         await asyncio.gather(*self._tasks, return_exceptions=True)
+        
+        # Stop advanced execution components
+        await self.execution_engine.stop()
+        await self.lifecycle_manager.stop()
         
         # Close all positions if configured
         if settings.close_positions_on_stop:
@@ -224,6 +245,158 @@ class TradingEngine:
             )
             return False
     
+    async def execute_with_algorithm(
+        self,
+        signal: Signal,
+        algorithm: ExecutionAlgorithm = ExecutionAlgorithm.SMART,
+        time_horizon: int = 60,  # minutes
+        participation_rate: Optional[float] = None
+    ) -> Optional[str]:
+        """
+        Execute signal using advanced execution algorithm.
+        
+        Args:
+            signal: Trading signal to execute
+            algorithm: Execution algorithm to use
+            time_horizon: Time horizon for execution in minutes
+            participation_rate: Target participation rate for POV algorithm
+            
+        Returns:
+            Execution ID for tracking
+        """
+        logger.info(
+            "Executing signal with advanced algorithm",
+            symbol=signal.symbol,
+            side=signal.side,
+            algorithm=algorithm.value,
+            time_horizon=time_horizon
+        )
+        
+        # Risk checks
+        risk_check = await self.risk_manager.check_signal(signal)
+        if not risk_check.approved:
+            logger.warning(
+                "Signal rejected by risk manager",
+                reason=risk_check.reason,
+                signal=signal.dict(),
+            )
+            return None
+        
+        # Calculate position size
+        position_size = await self._calculate_position_size(signal)
+        if position_size <= 0:
+            logger.warning("Invalid position size calculated", size=position_size)
+            return None
+        
+        # Create execution parameters
+        execution_params = ExecutionParameters(
+            algorithm=algorithm,
+            total_quantity=position_size,
+            time_horizon=time_horizon,
+            participation_rate=participation_rate,
+            price_limit=signal.entry_price,
+            urgency=0.5,  # Medium urgency
+            risk_tolerance=0.3,  # Conservative
+            metadata={
+                "signal_id": signal.model_dump()[\"timestamp\"],
+                "strategy": signal.strategy,
+                "confidence": signal.confidence,
+            }
+        )
+        
+        # Execute using execution engine
+        try:
+            execution_id = await self.execution_engine.execute_order(
+                symbol=signal.symbol,
+                side=signal.side,
+                parameters=execution_params
+            )
+            
+            logger.info(
+                "Advanced execution started",
+                execution_id=execution_id,
+                algorithm=algorithm.value,
+                quantity=float(position_size)
+            )
+            
+            return execution_id
+            
+        except Exception as e:
+            logger.error(
+                "Failed to start advanced execution",
+                error=str(e),
+                signal=signal.dict(),
+            )
+            return None
+    
+    async def create_managed_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        order_type: OrderType,
+        quantity: Decimal,
+        price: Optional[Decimal] = None,
+        **kwargs
+    ) -> Optional[str]:
+        """
+        Create order with full lifecycle management.
+        
+        Args:
+            symbol: Trading symbol
+            side: Order side
+            order_type: Order type
+            quantity: Order quantity
+            price: Order price (for limit orders)
+            **kwargs: Additional order parameters
+            
+        Returns:
+            Order ID for tracking
+        """
+        try:
+            order_id = await self.lifecycle_manager.create_order(
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                **kwargs
+            )
+            
+            logger.info(
+                "Managed order created",
+                order_id=order_id,
+                symbol=symbol,
+                side=side.value,
+                quantity=float(quantity)
+            )
+            
+            return order_id
+            
+        except Exception as e:
+            logger.error(
+                "Failed to create managed order",
+                error=str(e),
+                symbol=symbol,
+                side=side.value
+            )
+            return None
+    
+    async def get_execution_status(self, execution_id: str) -> Optional[Dict]:
+        """Get status of advanced execution"""
+        return await self.execution_engine.get_execution_status(execution_id)
+    
+    async def get_order_lifecycle_status(self, order_id: str) -> Optional[Dict]:
+        """Get order lifecycle status"""
+        return await self.lifecycle_manager.get_order_status(order_id)
+    
+    async def cancel_execution(self, execution_id: str) -> bool:
+        """Cancel advanced execution"""
+        return await self.execution_engine.cancel_execution(execution_id)
+    
+    async def cancel_managed_order(self, order_id: str) -> bool:
+        """Cancel managed order"""
+        return await self.lifecycle_manager.cancel_order(order_id)
+    
     async def get_portfolio_status(self) -> Dict:
         """Get current portfolio status including positions and P&L."""
         positions = await self.position_manager.get_all_positions()
@@ -286,22 +459,79 @@ class TradingEngine:
     
     async def _submit_order(self, order: Order) -> None:
         """Submit order to exchange."""
-        # This would integrate with actual exchange API
-        # For now, simulate order submission
-        await asyncio.sleep(0.1)  # Simulate network delay
+        if not self.exchange_manager:
+            # Fallback to simulation if no exchange manager
+            await asyncio.sleep(0.1)  # Simulate network delay
+            await self.order_manager.update_status(order.id, OrderStatus.OPEN)
+            return
         
-        # Update order status
-        await self.order_manager.update_status(order.id, OrderStatus.OPEN)
+        try:
+            # Submit order through exchange manager
+            exchange_order = await self.exchange_manager.route_order(
+                symbol=order.symbol,
+                side=order.side,
+                order_type=order.order_type,
+                quantity=order.quantity,
+                price=order.price,
+                time_in_force=getattr(order, 'time_in_force', None),
+                client_order_id=order.id
+            )
+            
+            # Update order with exchange details
+            if exchange_order:
+                # Take the first successfully placed order
+                first_order = next(iter(exchange_order.values()))
+                await self.order_manager.update_from_exchange_order(order.id, first_order)
+            else:
+                await self.order_manager.update_status(order.id, OrderStatus.REJECTED)
+                
+        except Exception as e:
+            logger.error(f"Failed to submit order to exchange: {str(e)}")
+            await self.order_manager.update_status(order.id, OrderStatus.REJECTED)
+            raise
     
     async def _cancel_order_on_exchange(self, order: Order) -> None:
         """Cancel order on exchange."""
-        # This would integrate with actual exchange API
-        await asyncio.sleep(0.1)  # Simulate network delay
+        if not self.exchange_manager:
+            # Fallback to simulation if no exchange manager
+            await asyncio.sleep(0.1)  # Simulate network delay
+            return
+        
+        try:
+            # Cancel order through exchange manager
+            await self.exchange_manager.cancel_order(
+                symbol=order.symbol,
+                order_id=getattr(order, 'exchange_order_id', order.id)
+            )
+        except Exception as e:
+            logger.error(f"Failed to cancel order on exchange: {str(e)}")
+            raise
     
     async def _get_account_balance(self) -> Decimal:
         """Get current account balance."""
-        # This would integrate with actual exchange API
-        return Decimal("10000")  # Simulated balance
+        if not self.exchange_manager:
+            # Fallback to simulated balance if no exchange manager
+            return Decimal("10000")  # Simulated balance
+        
+        try:
+            # Get balance from exchange manager
+            balances = await self.exchange_manager.get_balance()
+            
+            # Return balance in quote currency (default USDT)
+            quote_currency = settings.default_quote_currency
+            if quote_currency in balances:
+                return balances[quote_currency].free
+            
+            # Fallback to first available balance
+            if balances:
+                first_balance = next(iter(balances.values()))
+                return first_balance.free
+            
+            return Decimal("0")
+            
+        except Exception as e:
+            logger.error(f"Failed to get account balance: {str(e)}")
+            return Decimal("10000")  # Fallback to simulated balance
     
     async def _close_all_positions(self) -> None:
         """Close all open positions."""
@@ -332,8 +562,38 @@ class TradingEngine:
                 open_orders = await self.order_manager.get_open_orders()
                 
                 for order in open_orders:
-                    # This would check actual order status from exchange
-                    # For now, simulate some orders getting filled
+                    # Check order status from exchange if available
+                    if self.exchange_manager:
+                        try:
+                            # Get real order status from exchange
+                            exchange_order = await self.exchange_manager.get_order_status(
+                                symbol=order.symbol,
+                                order_id=getattr(order, 'exchange_order_id', order.id)
+                            )
+                            
+                            if exchange_order and exchange_order.status != order.status:
+                                # Create execution report from exchange order
+                                execution = ExecutionReport(
+                                    order_id=order.id,
+                                    symbol=order.symbol,
+                                    side=order.side,
+                                    order_type=order.order_type,
+                                    status=exchange_order.status,
+                                    price=exchange_order.price or Decimal("0"),
+                                    quantity=order.quantity,
+                                    filled_quantity=exchange_order.executed_qty or Decimal("0"),
+                                    remaining_quantity=order.quantity - (exchange_order.executed_qty or Decimal("0")),
+                                    average_price=exchange_order.price,
+                                    timestamp=datetime.utcnow(),
+                                )
+                                
+                                await self._handle_execution(execution)
+                                continue
+                                
+                        except Exception as e:
+                            logger.warning(f"Failed to check order status from exchange: {str(e)}")
+                    
+                    # Fallback to simulation for orders without exchange integration
                     if order.created_at < datetime.utcnow().timestamp() - 5:
                         execution = ExecutionReport(
                             order_id=order.id,
@@ -365,8 +625,20 @@ class TradingEngine:
                 positions = await self.position_manager.get_all_positions()
                 
                 for position in positions.values():
-                    # This would get actual market prices
-                    # For now, simulate price movements
+                    # Get real market prices from exchange if available
+                    if self.exchange_manager:
+                        try:
+                            ticker = await self.exchange_manager.get_ticker(position.symbol)
+                            if ticker:
+                                await self.position_manager.update_price(
+                                    position.symbol,
+                                    ticker.last_price
+                                )
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Failed to get real price for {position.symbol}: {str(e)}")
+                    
+                    # Fallback to simulated price movements
                     current_price = position.current_price * Decimal("1.001")
                     await self.position_manager.update_price(
                         position.symbol,

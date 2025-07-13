@@ -274,6 +274,48 @@ class ExchangeManager:
         
         return {best_exchange: order}
     
+    async def get_order_status(self, symbol: str, order_id: str) -> Optional[Order]:
+        """Get order status from exchange"""
+        for exchange_name in self.active_exchanges:
+            try:
+                exchange = self.exchanges[exchange_name]
+                return await exchange.get_order(symbol, order_id)
+            except Exception as e:
+                logger.warning(f"Failed to get order status from {exchange_name}: {str(e)}")
+                continue
+        
+        logger.error(f"Failed to get order status for {order_id} from all exchanges")
+        return None
+    
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel order on exchange"""
+        for exchange_name in self.active_exchanges:
+            try:
+                exchange = self.exchanges[exchange_name]
+                await exchange.cancel_order(symbol, order_id)
+                return True
+            except Exception as e:
+                logger.warning(f"Failed to cancel order on {exchange_name}: {str(e)}")
+                continue
+        
+        logger.error(f"Failed to cancel order {order_id} on all exchanges")
+        return False
+    
+    async def get_ticker(self, symbol: str) -> Optional[Ticker]:
+        """Get ticker from best available exchange"""
+        return await self.execute_with_failover("get_ticker", symbol)
+    
+    async def get_balance(self, asset: Optional[str] = None) -> Dict[str, Balance]:
+        """Get balance from primary exchange"""
+        if self.primary_exchange and self.primary_exchange in self.active_exchanges:
+            try:
+                exchange = self.exchanges[self.primary_exchange]
+                return await exchange.get_balance(asset)
+            except Exception as e:
+                logger.error(f"Failed to get balance from primary exchange: {str(e)}")
+        
+        return {}
+    
     # Failover support
     async def execute_with_failover(
         self,
