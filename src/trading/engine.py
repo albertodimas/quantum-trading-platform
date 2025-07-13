@@ -298,7 +298,7 @@ class TradingEngine:
             urgency=0.5,  # Medium urgency
             risk_tolerance=0.3,  # Conservative
             metadata={
-                "signal_id": signal.model_dump()[\"timestamp\"],
+                "signal_id": signal.model_dump()["timestamp"],
                 "strategy": signal.strategy,
                 "confidence": signal.confidence,
             }
